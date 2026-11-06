@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pay</title>
+<style>
+  :root {
+    --bg:#f2f2f7; --card:#ffffff; --ink:#111113; --muted:#8a8a90; --line:#d8d8de;
+    --btn:#000; --btn-ink:#fff; --ok:#30d158; --err:#ff453a;
+    --ease: cubic-bezier(.32,.72,0,1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#000; --card:#1c1c1e; --ink:#f5f5f7; --muted:#8e8e93; --line:#38383a; --btn:#fff; --btn-ink:#000; }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); overflow:hidden;
+         font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+         display:grid; place-items:center; padding:24px; }
+
+  /* ---------- main form ---------- */
+  main { width:100%; max-width:380px; transition:transform .5s var(--ease), opacity .4s; }
+  body.sheet-open main { transform:scale(.94); opacity:.55; }
+  h1 { font-size:1.7rem; margin:0 0 6px; letter-spacing:-.02em; }
+  .sub { margin:0 0 28px; color:var(--muted); }
+  .field { display:flex; align-items:baseline; border-bottom:2px solid var(--line); padding-bottom:6px; transition:border-color .25s; }
+  .field:focus-within { border-color:var(--ink); }
+  .field span { font-size:2.4rem; color:var(--muted); margin-right:6px; }
+  input { flex:1; min-width:0; border:0; background:transparent; color:var(--ink); font-size:2.4rem; outline:none; font-variant-numeric:tabular-nums; }
+  .hint { font-size:.85rem; color:var(--muted); margin:10px 0 24px; }
+  #err { min-height:1.3em; font-size:.9rem; color:var(--err); margin:-12px 0 12px; }
+  #err.shake { animation:shake .4s; }
+  @keyframes shake { 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }
+
+  .pay-btn { width:100%; height:54px; border:0; border-radius:14px; background:var(--btn); color:var(--btn-ink);
+             font-size:1.1rem; font-weight:600; cursor:pointer; transition:transform .15s var(--ease), opacity .2s; }
+  .pay-btn:active { transform:scale(.97); opacity:.85; }
+  .pay-btn:focus-visible { outline:3px solid var(--ok); outline-offset:3px; }
+
+  /* ---------- sheet ---------- */
+  .scrim { position:fixed; inset:0; background:rgba(0,0,0,.45); opacity:0; pointer-events:none; transition:opacity .45s var(--ease); }
+  body.sheet-open .scrim { opacity:1; pointer-events:auto; }
+  .sheet { position:fixed; left:0; right:0; bottom:0; margin:0 auto; max-width:480px;
+           background:var(--card); border-radius:26px 26px 0 0; padding:12px 24px calc(28px + env(safe-area-inset-bottom,0px));
+           transform:translateY(105%); transition:transform .55s var(--ease); min-height:340px; }
+  body.sheet-open .sheet { transform:translateY(0); }
+  .grab { width:38px; height:5px; border-radius:3px; background:var(--line); margin:0 auto 18px; }
+  .sheet-title { text-align:center; font-weight:600; font-size:1.05rem; margin-bottom:18px; }
+  .row { display:flex; justify-content:space-between; align-items:center; padding:14px 0; border-top:1px solid var(--line); }
+  .row small { color:var(--muted); font-size:.85rem; }
+  .card-chip { display:flex; align-items:center; gap:10px; }
+  .chip { width:38px; height:26px; border-radius:5px; background:linear-gradient(135deg,#3a3a42,#17171b); }
+  .total { font-size:1.35rem; font-weight:600; font-variant-numeric:tabular-nums; }
+
+  .confirm { margin-top:10px; width:100%; height:54px; border:0; border-radius:14px; background:var(--btn); color:var(--btn-ink);
+             font-size:1.05rem; font-weight:600; cursor:pointer; transition:transform .15s var(--ease), opacity .3s; }
+  .confirm:active { transform:scale(.97); }
+
+  /* ---------- status (processing → done) ---------- */
+  .status { position:absolute; inset:0; background:var(--card); border-radius:26px 26px 0 0;
+            display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px;
+            opacity:0; pointer-events:none; transition:opacity .35s; }
+  .sheet.busy .status { opacity:1; pointer-events:auto; }
+  .badge { width:92px; height:92px; position:relative; }
+  .badge svg { width:100%; height:100%; overflow:visible; }
+  .ring-bg { fill:none; stroke:var(--line); stroke-width:4; opacity:.7; }
+  .ring { fill:none; stroke:var(--ink); stroke-width:4; stroke-linecap:round; transform-origin:50% 50%; }
+  .sheet.busy:not(.done):not(.fail) .ring { stroke-dasharray:60 240; animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .ring-ok { fill:none; stroke:var(--ok); stroke-width:4; stroke-linecap:round; stroke-dasharray:289; stroke-dashoffset:289; transform:rotate(-90deg); transform-origin:50% 50%; }
+  .tick { fill:none; stroke:var(--ok); stroke-width:6; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:60; stroke-dashoffset:60; }
+  .cross { fill:none; stroke:var(--err); stroke-width:6; stroke-linecap:round; stroke-dasharray:40; stroke-dashoffset:40; }
+  .sheet.done .ring, .sheet.done .ring-bg, .sheet.fail .ring { opacity:0; transition:opacity .2s; }
+  .sheet.done .ring-ok { animation:draw .6s var(--ease) forwards; }
+  .sheet.done .tick { animation:draw .45s .45s var(--ease) forwards; }
+  .sheet.done .badge { animation:pop .5s .75s var(--ease); }
+  .sheet.fail .cross { animation:draw .4s .1s var(--ease) forwards; }
+  .sheet.fail .badge { animation:shake .45s .3s; }
+  @keyframes draw { to { stroke-dashoffset:0; } }
+  @keyframes pop { 0%{transform:scale(1)} 45%{transform:scale(1.14)} 100%{transform:scale(1)} }
+
+  /* soft glow pulse behind the check */
+  .glow { position:absolute; inset:-14px; border-radius:50%; background:var(--ok); opacity:0; filter:blur(18px); }
+  .sheet.done .glow { animation:glow .9s .75s ease-out; }
+  @keyframes glow { 0%{opacity:0;transform:scale(.6)} 35%{opacity:.35} 100%{opacity:0;transform:scale(1.5)} }
+
+  .label { font-size:1.15rem; font-weight:600; text-align:center; min-height:1.4em; }
+  .sub-label { color:var(--muted); font-size:.95rem; margin-top:-12px; text-align:center; font-variant-numeric:tabular-nums; }
+  .close-btn { margin-top:6px; border:0; background:transparent; color:var(--muted); font-size:1rem; cursor:pointer; padding:10px 18px; opacity:0; transition:opacity .4s .9s; }
+  .sheet.done .close-btn, .sheet.fail .close-btn { opacity:1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,*::before,*::after { animation-duration:.01ms !important; animation-delay:0s !important; transition-duration:.01ms !important; transition-delay:0s !important; }
+  }
+</style>
+</head>
+<body>
+
+<main>
+  <h1>Pay</h1>
+  <p class="sub">Enter an amount and pay by card.</p>
+  <div class="field"><span>$</span><input id="amount" type="text" inputmode="decimal" placeholder="0.00" autocomplete="off" autofocus></div>
+  <div class="hint" id="hint"></div>
+  <div id="err" role="alert"></div>
+  <button class="pay-btn" id="open">Pay</button>
+</main>
+
+<div class="scrim" id="scrim"></div>
+
+<section class="sheet" id="sheet" aria-modal="true" role="dialog" aria-label="Payment">
+  <div class="grab"></div>
+  <div class="sheet-title">Confirm payment</div>
+  <div class="row"><div class="card-chip"><div class="chip"></div><div>Card<br><small>Visa / Mastercard</small></div></div><small>Change</small></div>
+  <div class="row"><span>Total</span><span class="total" id="total">$0.00</span></div>
+  <button class="confirm" id="confirm">Confirm</button>
+
+  <div class="status" aria-live="polite">
+    <div class="badge">
+      <div class="glow"></div>
+      <svg viewBox="0 0 92 92">
+        <circle class="ring-bg" cx="46" cy="46" r="40"/>
+        <circle class="ring" cx="46" cy="46" r="40"/>
+        <circle class="ring-ok" cx="46" cy="46" r="40"/>
+        <path class="tick" d="M28 47 L41 60 L65 34"/>
+        <path class="cross" d="M33 33 L59 59 M59 33 L33 59"/>
+      </svg>
+    </div>
+    <div class="label" id="label">Processing…</div>
+    <div class="sub-label" id="sublabel"></div>
+    <button class="close-btn" id="close">Close</button>
+  </div>
+</section>
+
+<script>
+  // ====== settings ======
+  const MIN = 0.1, MAX = 1000, CURRENCY = "$";
+
+  /* Talks to YOUR server (server.js -> provider.js). Resolves on success, throws on failure.
+     If the server returns {url}, the browser is redirected to the provider's payment page. */
+  async function processPayment(amount) {
+    const r = await fetch("/create-payment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || "Payment failed");
+    if (data.url) { location.href = data.url; await new Promise(() => {}); }  // redirect: keep spinner
+  }
+
+  const $ = id => document.getElementById(id);
+  const input = $("amount"), err = $("err"), sheet = $("sheet");
+  $("hint").textContent = `From ${CURRENCY}${MIN} to ${CURRENCY}${MAX.toLocaleString("en-US")}`;
+  let amount = 0, busy = false;
+
+  const fmt = n => CURRENCY + n.toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  function showError(msg) {
+    err.textContent = msg; err.classList.remove("shake"); void err.offsetWidth; err.classList.add("shake");
+    if (navigator.vibrate) navigator.vibrate(30);
+  }
+
+  $("open").addEventListener("click", () => {
+    const v = parseFloat(input.value.replace(",", "."));
+    if (!isFinite(v) || v < MIN || v > MAX) return showError(`Enter an amount between ${CURRENCY}${MIN} and ${CURRENCY}${MAX}.`);
+    err.textContent = ""; amount = Math.round(v * 100) / 100;
+    $("total").textContent = fmt(amount);
+    input.blur(); document.body.classList.add("sheet-open");
+  });
+  input.addEventListener("keydown", e => { if (e.key === "Enter") $("open").click(); });
+
+  function closeSheet() {
+    if (busy) return;
+    document.body.classList.remove("sheet-open");
+    setTimeout(() => sheet.classList.remove("busy","done","fail"), 600);
+  }
+  $("scrim").addEventListener("click", closeSheet);
+  $("close").addEventListener("click", () => { closeSheet(); if (sheet.classList.contains("done")) input.value = ""; });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
+
+  $("confirm").addEventListener("click", async () => {
+    if (busy) return; busy = true;
+    sheet.classList.remove("done","fail"); sheet.classList.add("busy");
+    $("label").textContent = "Processing…"; $("sublabel").textContent = "";
+    const started = Date.now();
+    try {
+      await processPayment(amount);
+      const wait = Math.max(0, 900 - (Date.now() - started));   // keep spinner visible at least a moment
+      await new Promise(r => setTimeout(r, wait));
+      $("label").textContent = "Done"; $("sublabel").textContent = fmt(amount);
+      sheet.classList.add("done");
+      if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+    } catch (e) {
+      $("label").textContent = "Payment failed"; $("sublabel").textContent = "Please try again";
+      sheet.classList.add("fail");
+      if (navigator.vibrate) navigator.vibrate(80);
+    } finally { busy = false; }
+  });
+</script>
+</body>
+</html>
